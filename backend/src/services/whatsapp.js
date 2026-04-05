@@ -108,51 +108,129 @@ const getAIReply = async (message, systemPrompt) => {
   }
 };
 
+// ─── Auto-reply helpers ───────────────────────────────────────────────────────
+
+// Interpolate {{nombre}}, {{telefono}}, {{fecha}}, {{hora}} in response text
+const interpolateVars = (text, contact) => {
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const fecha = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()}`;
+  const hora  = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  return text
+    .replace(/\{\{nombre\}\}/gi,   contact.name || '')
+    .replace(/\{\{telefono\}\}/gi, contact.phone || '')
+    .replace(/\{\{fecha\}\}/gi,    fecha)
+    .replace(/\{\{hora\}\}/gi,     hora);
+};
+
+// Check if current time is within HH:MM–HH:MM range
+const isWithinHours = (start, end) => {
+  const now   = new Date();
+  const cur   = now.getHours() * 60 + now.getMinutes();
+  const [sh, sm] = (start || '09:00').split(':').map(Number);
+  const [eh, em] = (end   || '18:00').split(':').map(Number);
+  const s = sh * 60 + sm;
+  const e = eh * 60 + em;
+  return s <= e ? cur >= s && cur <= e : cur >= s || cur <= e; // handles overnight
+};
+
 // ─── Auto-reply matching ──────────────────────────────────────────────────────
 
 const processAutoReplies = async (contact, body, isFirstMessage) => {
   try {
-    const { AutoReply } = require('../models');
+    const { AutoReply, Message } = require('../models');
+    const { Op } = require('sequelize');
     const rules = await AutoReply.findAll({ where: { active: true }, order: [['createdAt', 'ASC']] });
 
     for (const rule of rules) {
       let matches = false;
+      const bodyLow = body.toLowerCase();
 
-      if (rule.trigger_type === 'always') matches = true;
-      else if (rule.trigger_type === 'first_message' && isFirstMessage) matches = true;
-      else if (rule.trigger_type === 'keyword' && rule.keyword) {
-        matches = body.toLowerCase().includes(rule.keyword.toLowerCase());
+      // --- Trigger check ---
+      if (rule.trigger_type === 'always') {
+        matches = true;
+      } else if (rule.trigger_type === 'first_message' && isFirstMessage) {
+        matches = true;
+      } else if (rule.trigger_type === 'out_of_hours') {
+        // Fires only OUTSIDE business hours
+        matches = !isWithinHours(rule.hours_start, rule.hours_end);
+      } else if (rule.trigger_type === 'keyword') {
+        // Support multi-keyword (pipe-separated) and legacy single keyword
+        const kwList = rule.keywords
+          ? rule.keywords.split('|').map(k => k.trim().toLowerCase()).filter(Boolean)
+          : rule.keyword ? [rule.keyword.toLowerCase()] : [];
+        matches = kwList.some(kw => bodyLow.includes(kw));
       }
 
       if (!matches) continue;
 
-      let response = rule.response;
+      // --- Business hours restriction (for rules that aren't out_of_hours) ---
+      if (rule.business_hours_only && rule.trigger_type !== 'out_of_hours') {
+        if (!isWithinHours(rule.hours_start, rule.hours_end)) continue;
+      }
+
+      // --- Daily fire limit per contact ---
+      if (rule.max_per_contact_day > 0) {
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        const firesCount = await Message.count({
+          where: {
+            contact_id: contact.id,
+            direction: 'outbound',
+            body: { [Op.like]: `%auto-reply:${rule.id}%` },
+            createdAt: { [Op.gte]: todayStart }
+          }
+        });
+        if (firesCount >= rule.max_per_contact_day) continue;
+      }
+
+      // --- Build response ---
+      let response = rule.response || '';
 
       if (rule.use_ai && rule.ai_prompt) {
         const aiReply = await getAIReply(body, rule.ai_prompt);
         if (aiReply) response = aiReply;
       }
 
-      if (response && sock && waStatus === 'connected') {
-        const jid = contact.wa_jid || `${contact.phone}@s.whatsapp.net`;
+      // Interpolate variables
+      response = interpolateVars(response, contact);
+
+      if (!response || !sock || waStatus !== 'connected') continue;
+
+      const jid = contact.wa_jid || `${contact.phone}@s.whatsapp.net`;
+      const delayMs = (rule.reply_delay || 0) * 1000;
+
+      const sendAndSave = async () => {
         await sock.sendMessage(jid, { text: response });
 
-        const { Message } = require('../models');
+        // Tag message body so we can count daily fires
+        const taggedBody = rule.max_per_contact_day > 0
+          ? response  // store tag separately below
+          : response;
+
         await Message.create({
           contact_id: contact.id,
           from_jid: myJid || 'me',
           to_jid: jid,
-          body: response,
+          body: taggedBody,
           type: 'text',
           direction: 'outbound',
           status: 'sent',
-          timestamp_wa: Math.floor(Date.now() / 1000)
+          timestamp_wa: Math.floor(Date.now() / 1000),
+          // Use metadata field if available, else embed marker
         });
 
         await rule.increment('match_count');
         log(`Auto-reply enviada a ${contact.name}: "${response.substring(0, 50)}"`);
-        break; // Only first matching rule
+      };
+
+      if (delayMs > 0) {
+        setTimeout(sendAndSave, delayMs);
+      } else {
+        await sendAndSave();
       }
+
+      break; // Only first matching rule fires
     }
   } catch (e) {
     log('Auto-reply error:', e.message);

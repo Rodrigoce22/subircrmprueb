@@ -143,31 +143,15 @@ export default function DashboardPage() {
               {getGreeting()}, <span className="page-title-accent">{user?.name?.split(' ')[0]}</span>
             </h1>
             <p className="page-subtitle">
-              Monitoreo de ingresos en tiempo real y métricas de engagement para {user?.name?.split(' ')[0]}
+              {d.contacts > 0
+                ? `${d.contacts} contactos en base · ${d.messages?.today || 0} mensajes hoy`
+                : 'Todo listo. Empezá agregando tus primeros contactos.'}
             </p>
           </div>
-          <div className="hidden lg:flex items-center gap-4">
-            {/* Weather widget */}
-            <div className="relative flex items-center gap-2.5 px-4 py-2 rounded-2xl overflow-hidden"
-              style={{ background: 'linear-gradient(135deg, rgba(30,42,58,0.8), rgba(28,27,27,0.8))', border: '0.5px solid rgba(62,144,255,0.2)', backdropFilter: 'blur(20px)' }}>
-              <div className="relative flex-shrink-0">
-                <div className="absolute inset-0 rounded-full blur-md opacity-40" style={{ background: '#FFB800' }} />
-                <svg className="w-5 h-5 relative" style={{ color: '#FFB800', animation: 'spin 20s linear infinite' }}
-                  viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                  <circle cx="12" cy="12" r="5" fill="#FFB800" stroke="none" />
-                  <line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" />
-                  <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-                  <line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" />
-                  <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-                </svg>
-              </div>
-              <span className="text-sm font-bold text-white">24°C</span>
-              <span className="text-xs text-[#aac7ff] font-medium">SF</span>
-            </div>
-            {/* Status */}
+          <div className="hidden lg:flex items-center gap-3">
             <div className="flex items-center gap-2 px-4 py-2 rounded-full glass-panel">
               <Activity size={13} className="text-[#aac7ff]" />
-              <span className="text-xs text-[#aac7ff] font-semibold">Sistema activo</span>
+              <span className="text-xs text-[#aac7ff] font-semibold">En línea</span>
             </div>
           </div>
         </div>

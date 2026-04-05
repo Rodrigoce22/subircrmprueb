@@ -4,7 +4,7 @@ import {
   LayoutDashboard, MessageSquare, Users, CheckSquare,
   FileText, UserCog, LogOut, Menu, X, Kanban,
   Calendar, Settings, Video, Bell, BellOff,
-  HelpCircle, ChevronUp, Megaphone, ChevronRight,
+  HelpCircle, ChevronUp, Megaphone, ChevronRight, User,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '../store/authStore';
@@ -153,10 +153,14 @@ const SidebarNav = ({ onClose }) => {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className="w-full flex items-center gap-3 px-3 py-3 rounded-2xl bg-white/5 hover:bg-white/8 transition-colors text-left group">
-              <div className="w-9 h-9 rounded-full flex items-center justify-center text-[#003064] text-sm font-bold flex-shrink-0"
-                style={{ background: 'linear-gradient(135deg, #aac7ff 0%, #3e90ff 100%)' }}>
-                {user?.name?.[0]?.toUpperCase() || 'U'}
-              </div>
+              {user?.avatar ? (
+                <img src={user.avatar} alt="avatar" className="w-9 h-9 rounded-full object-cover flex-shrink-0 ring-1 ring-[#aac7ff]/20" />
+              ) : (
+                <div className="w-9 h-9 rounded-full flex items-center justify-center text-[#003064] text-sm font-bold flex-shrink-0"
+                  style={{ background: 'linear-gradient(135deg, #aac7ff 0%, #3e90ff 100%)' }}>
+                  {user?.name?.[0]?.toUpperCase() || 'U'}
+                </div>
+              )}
               <div className="flex-1 min-w-0">
                 <div className="text-xs font-bold text-white truncate">{user?.name}</div>
                 <div className="text-[10px] text-white/30 capitalize">{user?.role}</div>
@@ -167,6 +171,10 @@ const SidebarNav = ({ onClose }) => {
           <DropdownMenuContent side="top" align="start" className="w-52 mb-1">
             <DropdownMenuLabel>Mi cuenta</DropdownMenuLabel>
             <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => { navigate('/profile'); onClose?.(); }}>
+              <User size={14} />
+              Mi perfil
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => { navigate('/settings'); onClose?.(); }}>
               <Settings size={14} />
               Configuración
@@ -199,6 +207,7 @@ const MORE_ITEMS = [
   { path: '/marketing', label: 'Marketing',  icon: Megaphone,     color: '#f59e0b' },
   { path: '/reports',   label: 'Reportes',   icon: FileText,      color: '#10b981' },
   { path: '/settings',  label: 'Config.',    icon: Settings,      color: '#8b5cf6' },
+  { path: '/profile',   label: 'Perfil',     icon: User,          color: '#aac7ff' },
 ];
 
 function MobileBottomNav({ moreOpen, setMoreOpen }) {
@@ -322,6 +331,7 @@ export default function Layout() {
     '/marketing': 'Marketing',
     '/reports':   'Reportes',
     '/settings':  'Configuración',
+    '/profile':   'Mi Perfil',
     '/users':     'Usuarios',
   };
   const pageLabel = PAGE_TITLES[currentPath] || 'Influence CRM';

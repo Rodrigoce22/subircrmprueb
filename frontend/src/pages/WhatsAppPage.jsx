@@ -2,8 +2,9 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Send, QrCode, WifiOff, RefreshCw, MessageSquare,
-  Check, CheckCheck, Search, Mic, MicOff, Square, X,
-  Radio, Bot, Plus, Trash2, Edit2, ToggleLeft, ToggleRight
+  Check, CheckCheck, Search, Mic, MicOff, X,
+  Radio, Bot, Plus, Trash2, Edit2, ToggleLeft, ToggleRight,
+  Clock, Calendar, ChevronDown, AlarmClock, BellOff, Zap
 } from 'lucide-react';
 import api from '../services/api';
 import { useSocketStore } from '../store/socketStore';
@@ -388,26 +389,77 @@ const BroadcastModal = ({ chats, onClose }) => {
   );
 };
 
+// ── Variables helper ───────────────────────────────────────────────────────────
+const VARS = [
+  { label: '{{nombre}}',   desc: 'Nombre del contacto' },
+  { label: '{{telefono}}', desc: 'Teléfono' },
+  { label: '{{fecha}}',    desc: 'Fecha de hoy' },
+  { label: '{{hora}}',     desc: 'Hora actual' },
+];
+
+const TRIGGER_LABELS = {
+  first_message: 'Primer mensaje',
+  keyword:       'Palabra clave',
+  always:        'Siempre',
+  out_of_hours:  'Fuera de horario',
+};
+
+const DELAY_OPTIONS = [
+  { value: 0,  label: 'Inmediato' },
+  { value: 5,  label: '5 segundos' },
+  { value: 15, label: '15 segundos' },
+  { value: 30, label: '30 segundos' },
+  { value: 60, label: '1 minuto' },
+];
+
+const LIMIT_OPTIONS = [
+  { value: 0, label: 'Sin límite' },
+  { value: 1, label: '1 vez por día' },
+  { value: 3, label: '3 veces por día' },
+  { value: 5, label: '5 veces por día' },
+];
+
+const DEFAULT_FORM = {
+  name: '', trigger_type: 'keyword', keywords: '', response: '',
+  use_ai: false, ai_prompt: '', active: true,
+  reply_delay: 0, business_hours_only: false,
+  hours_start: '09:00', hours_end: '18:00', max_per_contact_day: 0,
+};
+
 // ── Auto-Reply Rules Panel ─────────────────────────────────────────────────────
 const AutoReplyPanel = ({ onClose }) => {
   const qc = useQueryClient();
+  const [tab, setTab] = useState('rules'); // 'rules' | 'scheduled'
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({ name: '', trigger_type: 'keyword', keyword: '', response: '', use_ai: false, ai_prompt: '', active: true });
+  const [form, setForm] = useState(DEFAULT_FORM);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const responseRef = useRef(null);
 
   const { data: rules = [], isLoading } = useQuery({
     queryKey: ['auto_replies'],
     queryFn: () => api.get('/auto-replies').then(r => r.data)
   });
 
+  const { data: scheduled = [], isLoading: loadingScheduled } = useQuery({
+    queryKey: ['wa_scheduled'],
+    queryFn: () => api.get('/whatsapp/scheduled').then(r => r.data),
+    enabled: tab === 'scheduled'
+  });
+
   const saveMutation = useMutation({
     mutationFn: (data) => data.id ? api.put(`/auto-replies/${data.id}`, data) : api.post('/auto-replies', data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['auto_replies'] }); setShowForm(false); setEditing(null); toast.success('Regla guardada'); }
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['auto_replies'] });
+      setShowForm(false); setEditing(null);
+      toast.success(editing ? 'Regla actualizada' : 'Regla creada');
+    },
+    onError: () => toast.error('Error al guardar la regla')
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id) => api.delete(`/auto-replies/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['auto_replies'] })
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['auto_replies'] }); toast.success('Regla eliminada'); }
   });
 
   const toggleMutation = useMutation({
@@ -415,136 +467,368 @@ const AutoReplyPanel = ({ onClose }) => {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['auto_replies'] })
   });
 
+  const cancelScheduledMutation = useMutation({
+    mutationFn: (id) => api.delete(`/whatsapp/scheduled/${id}`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['wa_scheduled'] }); toast.success('Mensaje cancelado'); }
+  });
+
   const openEdit = (rule) => {
-    setForm({ ...rule });
+    setForm({ ...DEFAULT_FORM, ...rule, keywords: rule.keywords || rule.keyword || '' });
     setEditing(rule.id);
     setShowForm(true);
+    setShowAdvanced(!!(rule.reply_delay || rule.business_hours_only || rule.max_per_contact_day));
   };
 
   const openNew = () => {
-    setForm({ name: '', trigger_type: 'keyword', keyword: '', response: '', use_ai: false, ai_prompt: '', active: true });
+    setForm(DEFAULT_FORM);
     setEditing(null);
     setShowForm(true);
+    setShowAdvanced(false);
+  };
+
+  const insertVar = (varText) => {
+    const el = responseRef.current;
+    if (!el) { setForm(f => ({ ...f, response: (f.response || '') + varText })); return; }
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const newVal = form.response.slice(0, start) + varText + form.response.slice(end);
+    setForm(f => ({ ...f, response: newVal }));
+    setTimeout(() => { el.focus(); el.setSelectionRange(start + varText.length, start + varText.length); }, 0);
+  };
+
+  const handleSave = () => {
+    if (!form.name.trim()) return toast.error('El nombre es requerido');
+    if (!form.use_ai && !form.response.trim()) return toast.error('La respuesta no puede estar vacía');
+    saveMutation.mutate({ ...form, id: editing });
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <div className="bg-[#201f1f] ghost-border rounded-2xl w-full max-w-lg shadow-ambient flex flex-col max-h-[90vh]">
-        <div className="flex items-center justify-between p-5 border-b border-white/5">
+      <div className="bg-[#201f1f] ghost-border rounded-2xl w-full max-w-xl shadow-ambient flex flex-col max-h-[92vh]">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-white/5 flex-shrink-0">
           <div>
-            <h2 className="text-base font-bold text-[#e5e2e1] font-display">Respuestas automáticas</h2>
-            <p className="text-xs text-[#8b90a0] mt-0.5">Responde automáticamente con reglas o IA</p>
+            <h2 className="text-base font-bold text-white">Automatizaciones WhatsApp</h2>
+            <p className="text-xs text-white/40 mt-0.5">Respuestas automáticas y mensajes programados</p>
           </div>
-          <button onClick={onClose} className="text-[#8b90a0] hover:text-[#e5e2e1] transition"><X size={18} /></button>
+          <button onClick={onClose} className="text-white/30 hover:text-white/70 transition p-1"><X size={18} /></button>
         </div>
 
-        {showForm ? (
-          <div className="p-5 space-y-4 overflow-y-auto flex-1">
+        {!showForm && (
+          <div className="flex gap-1 px-5 pt-3 flex-shrink-0">
+            {[
+              { id: 'rules',     label: 'Reglas',      icon: Bot },
+              { id: 'scheduled', label: 'Programados', icon: Clock },
+            ].map(t => {
+              const Icon = t.icon;
+              return (
+                <button key={t.id} onClick={() => setTab(t.id)}
+                  className={clsx('flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-medium transition-all',
+                    tab === t.id ? 'bg-[#aac7ff]/20 text-[#aac7ff]' : 'text-white/40 hover:text-white/70')}>
+                  <Icon size={12} /> {t.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Form */}
+        {showForm && (
+          <div className="overflow-y-auto flex-1 p-5 space-y-4">
+            {/* Name */}
             <div>
-              <label className="block text-xs font-medium text-[#c1c6d7] mb-1.5">Nombre de la regla</label>
+              <label className="block text-xs font-medium text-white/50 mb-1.5">Nombre de la regla *</label>
               <input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                className="input-obs w-full px-4 py-2.5 text-sm" placeholder="Ej: Bienvenida" />
+                className="input-obs w-full px-4 py-2.5 text-sm" placeholder="Ej: Bienvenida nuevos clientes" />
             </div>
+
+            {/* Trigger */}
             <div>
-              <label className="block text-xs font-medium text-[#c1c6d7] mb-1.5">Disparador</label>
+              <label className="block text-xs font-medium text-white/50 mb-1.5">Cuándo se activa</label>
               <select value={form.trigger_type} onChange={e => setForm(f => ({ ...f, trigger_type: e.target.value }))}
                 className="input-obs w-full px-3 py-2.5 text-sm">
-                <option value="first_message">Primer mensaje del contacto</option>
-                <option value="keyword">Palabra clave</option>
-                <option value="always">Siempre</option>
+                <option value="first_message">Primera vez que el contacto escribe</option>
+                <option value="keyword">Contiene una palabra clave</option>
+                <option value="always">Siempre que recibe un mensaje</option>
+                <option value="out_of_hours">Fuera del horario de atención</option>
               </select>
             </div>
+
+            {/* Keywords */}
             {form.trigger_type === 'keyword' && (
               <div>
-                <label className="block text-xs font-medium text-[#c1c6d7] mb-1.5">Palabra clave</label>
-                <input value={form.keyword || ''} onChange={e => setForm(f => ({ ...f, keyword: e.target.value }))}
-                  className="input-obs w-full px-4 py-2.5 text-sm" placeholder="hola, precio, info..." />
+                <label className="block text-xs font-medium text-white/50 mb-1.5">
+                  Palabras clave <span className="text-white/25 font-normal">(separadas por coma)</span>
+                </label>
+                <input value={form.keywords} onChange={e => setForm(f => ({ ...f, keywords: e.target.value.split(',').map(k => k.trim()).join('|').replace(/\|$/, '') }))}
+                  className="input-obs w-full px-4 py-2.5 text-sm"
+                  placeholder="hola, precio, info, cotización"
+                  defaultValue={(form.keywords || '').replace(/\|/g, ', ')}
+                />
+                <p className="text-xs text-white/25 mt-1">Se activa si el mensaje contiene <em>cualquiera</em> de las palabras</p>
               </div>
             )}
 
-            <div className="flex items-center gap-3 py-2">
+            {/* Out of hours - show hours config always for that trigger */}
+            {form.trigger_type === 'out_of_hours' && (
+              <div className="bg-[#2a2a2a]/40 rounded-xl p-4 space-y-3 ghost-border">
+                <p className="text-xs font-medium text-white/50">Horario de atención (responde fuera de este rango)</p>
+                <div className="flex gap-3 items-center">
+                  <div className="flex-1">
+                    <label className="text-[10px] text-white/30 mb-1 block">Desde</label>
+                    <input type="time" value={form.hours_start} onChange={e => setForm(f => ({ ...f, hours_start: e.target.value }))}
+                      className="input-obs w-full px-3 py-2 text-sm" />
+                  </div>
+                  <span className="text-white/20 text-sm mt-4">—</span>
+                  <div className="flex-1">
+                    <label className="text-[10px] text-white/30 mb-1 block">Hasta</label>
+                    <input type="time" value={form.hours_end} onChange={e => setForm(f => ({ ...f, hours_end: e.target.value }))}
+                      className="input-obs w-full px-3 py-2 text-sm" />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* AI toggle */}
+            <div className="flex items-center gap-3 py-1">
               <button type="button" onClick={() => setForm(f => ({ ...f, use_ai: !f.use_ai }))}
-                className={clsx('text-sm flex items-center gap-2', form.use_ai ? 'text-[#4cd6ff]' : 'text-[#8b90a0]')}>
+                className={clsx('flex items-center gap-2 text-sm transition-colors',
+                  form.use_ai ? 'text-[#4cd6ff]' : 'text-white/40 hover:text-white/70')}>
                 {form.use_ai ? <ToggleRight size={20} /> : <ToggleLeft size={20} />}
                 Responder con IA
               </button>
+              {form.use_ai && <span className="text-[10px] bg-[#4cd6ff]/10 text-[#4cd6ff] px-2 py-0.5 rounded-full">Requiere API Key en Ajustes</span>}
             </div>
 
+            {/* Response / AI prompt */}
             {form.use_ai ? (
               <div>
-                <label className="block text-xs font-medium text-[#c1c6d7] mb-1.5">Prompt del sistema para la IA</label>
+                <label className="block text-xs font-medium text-white/50 mb-1.5">Instrucciones para la IA</label>
                 <textarea value={form.ai_prompt || ''} onChange={e => setForm(f => ({ ...f, ai_prompt: e.target.value }))}
                   rows={3} className="input-obs w-full px-4 py-2.5 text-sm resize-none"
-                  placeholder="Eres un asistente de ventas de [empresa]. Responde amablemente sobre nuestros servicios..." />
-                <p className="text-xs text-[#8b90a0] mt-1">Requiere API Key de OpenAI/OpenRouter configurada en Ajustes</p>
+                  placeholder="Sos asistente de ventas de [empresa]. Respondé amablemente preguntas sobre precios, horarios y servicios. Usá tono informal." />
               </div>
             ) : (
               <div>
-                <label className="block text-xs font-medium text-[#c1c6d7] mb-1.5">Respuesta fija</label>
-                <textarea value={form.response || ''} onChange={e => setForm(f => ({ ...f, response: e.target.value }))}
-                  rows={3} className="input-obs w-full px-4 py-2.5 text-sm resize-none"
-                  placeholder="Hola! Gracias por contactarnos. Te responderemos a la brevedad." />
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs font-medium text-white/50">Mensaje de respuesta *</label>
+                  <div className="flex items-center gap-1">
+                    {VARS.map(v => (
+                      <button key={v.label} type="button" onClick={() => insertVar(v.label)}
+                        title={v.desc}
+                        className="text-[10px] px-2 py-0.5 rounded-lg bg-[#aac7ff]/10 text-[#aac7ff] hover:bg-[#aac7ff]/20 transition-colors font-mono">
+                        {v.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <textarea ref={responseRef} value={form.response || ''} onChange={e => setForm(f => ({ ...f, response: e.target.value }))}
+                  rows={4} className="input-obs w-full px-4 py-2.5 text-sm resize-none"
+                  placeholder="Hola {{nombre}}, gracias por escribirnos. En breve te respondemos." />
               </div>
             )}
 
+            {/* Advanced section */}
+            <div>
+              <button type="button" onClick={() => setShowAdvanced(s => !s)}
+                className="flex items-center gap-2 text-xs text-white/40 hover:text-white/70 transition-colors w-full py-1">
+                <ChevronDown size={13} className={clsx('transition-transform', showAdvanced && 'rotate-180')} />
+                Configuración avanzada
+              </button>
+
+              {showAdvanced && (
+                <div className="mt-3 space-y-4 bg-[#2a2a2a]/30 rounded-xl p-4 ghost-border">
+
+                  {/* Reply delay */}
+                  <div>
+                    <label className="flex items-center gap-1.5 text-xs font-medium text-white/50 mb-2">
+                      <Zap size={11} /> Demora antes de responder
+                    </label>
+                    <div className="flex gap-2 flex-wrap">
+                      {DELAY_OPTIONS.map(o => (
+                        <button key={o.value} type="button"
+                          onClick={() => setForm(f => ({ ...f, reply_delay: o.value }))}
+                          className={clsx('px-3 py-1.5 rounded-lg text-xs font-medium transition-all ghost-border',
+                            form.reply_delay === o.value ? 'bg-[#aac7ff]/20 text-[#aac7ff]' : 'text-white/40 hover:text-white/70')}>
+                          {o.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Business hours (for non out_of_hours triggers) */}
+                  {form.trigger_type !== 'out_of_hours' && (
+                    <div>
+                      <div className="flex items-center gap-3 mb-2">
+                        <button type="button" onClick={() => setForm(f => ({ ...f, business_hours_only: !f.business_hours_only }))}
+                          className={clsx('flex items-center gap-2 text-xs transition-colors',
+                            form.business_hours_only ? 'text-[#ffb77f]' : 'text-white/40 hover:text-white/70')}>
+                          {form.business_hours_only ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
+                          <AlarmClock size={11} /> Solo responder en horario de atención
+                        </button>
+                      </div>
+                      {form.business_hours_only && (
+                        <div className="flex gap-3 items-center">
+                          <div className="flex-1">
+                            <label className="text-[10px] text-white/30 mb-1 block">Desde</label>
+                            <input type="time" value={form.hours_start} onChange={e => setForm(f => ({ ...f, hours_start: e.target.value }))}
+                              className="input-obs w-full px-3 py-2 text-sm" />
+                          </div>
+                          <span className="text-white/20 text-sm mt-4">—</span>
+                          <div className="flex-1">
+                            <label className="text-[10px] text-white/30 mb-1 block">Hasta</label>
+                            <input type="time" value={form.hours_end} onChange={e => setForm(f => ({ ...f, hours_end: e.target.value }))}
+                              className="input-obs w-full px-3 py-2 text-sm" />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Daily fire limit */}
+                  <div>
+                    <label className="flex items-center gap-1.5 text-xs font-medium text-white/50 mb-2">
+                      <BellOff size={11} /> Límite de activaciones por contacto
+                    </label>
+                    <div className="flex gap-2 flex-wrap">
+                      {LIMIT_OPTIONS.map(o => (
+                        <button key={o.value} type="button"
+                          onClick={() => setForm(f => ({ ...f, max_per_contact_day: o.value }))}
+                          className={clsx('px-3 py-1.5 rounded-lg text-xs font-medium transition-all ghost-border',
+                            form.max_per_contact_day === o.value ? 'bg-[#ffb77f]/20 text-[#ffb77f]' : 'text-white/40 hover:text-white/70')}>
+                          {o.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Actions */}
             <div className="flex gap-3 pt-1">
               <button type="button" onClick={() => setShowForm(false)}
-                className="flex-1 py-2.5 rounded-xl ghost-border text-[#c1c6d7] text-sm transition-colors hover:text-[#e5e2e1]">
+                className="flex-1 py-2.5 rounded-xl ghost-border text-white/50 text-sm hover:text-white/80 transition-colors">
                 Cancelar
               </button>
-              <button onClick={() => saveMutation.mutate({ ...form, id: editing })}
-                className="btn-primary flex-1 py-2.5 text-sm">
-                {editing ? 'Guardar' : 'Crear regla'}
+              <button onClick={handleSave} disabled={saveMutation.isPending}
+                className="btn-primary flex-1 py-2.5 text-sm disabled:opacity-50">
+                {saveMutation.isPending ? 'Guardando...' : editing ? 'Guardar cambios' : 'Crear regla'}
               </button>
             </div>
           </div>
-        ) : (
+        )}
+
+        {/* Rules list */}
+        {!showForm && tab === 'rules' && (
           <>
             <div className="flex-1 overflow-y-auto p-4 space-y-2">
-              {isLoading && <div className="flex justify-center py-8"><div className="w-6 h-6 border-2 border-[#aac7ff] border-t-transparent rounded-full animate-spin" /></div>}
+              {isLoading && <div className="flex justify-center py-8"><div className="w-5 h-5 border-2 border-[#aac7ff] border-t-transparent rounded-full animate-spin" /></div>}
               {!isLoading && rules.length === 0 && (
-                <div className="text-center py-8 text-[#414755] text-sm">
-                  <Bot size={28} className="mx-auto mb-2 text-[#414755]" />
-                  Sin reglas configuradas
+                <div className="text-center py-10">
+                  <Bot size={28} className="mx-auto mb-3 text-white/10" />
+                  <p className="text-white/30 text-sm mb-1">Sin reglas todavía</p>
+                  <p className="text-white/15 text-xs">Creá una para automatizar respuestas</p>
                 </div>
               )}
-              {rules.map(rule => (
-                <div key={rule.id} className={clsx('flex items-center gap-3 p-3.5 rounded-xl ghost-border transition-colors',
-                  rule.active ? 'bg-[#2a2a2a]/40' : 'opacity-50')}>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-[#e5e2e1]">{rule.name}</p>
-                      {rule.use_ai && <span className="text-xs bg-[#4cd6ff]/10 text-[#4cd6ff] px-1.5 py-0.5 rounded">IA</span>}
+              {rules.map(rule => {
+                const kwDisplay = rule.keywords
+                  ? rule.keywords.replace(/\|/g, ', ')
+                  : rule.keyword || '';
+                return (
+                  <div key={rule.id} className={clsx(
+                    'flex items-start gap-3 p-3.5 rounded-xl ghost-border transition-colors',
+                    rule.active ? 'bg-[#2a2a2a]/40' : 'opacity-40'
+                  )}>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <p className="text-sm font-medium text-white/85">{rule.name}</p>
+                        {rule.use_ai && <span className="text-[10px] bg-[#4cd6ff]/10 text-[#4cd6ff] px-1.5 py-0.5 rounded-full font-bold">IA</span>}
+                        {rule.reply_delay > 0 && (
+                          <span className="text-[10px] bg-[#ffb77f]/10 text-[#ffb77f] px-1.5 py-0.5 rounded-full font-bold flex items-center gap-0.5">
+                            <Clock size={8} /> {rule.reply_delay}s
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-white/30">
+                        {TRIGGER_LABELS[rule.trigger_type] || rule.trigger_type}
+                        {rule.trigger_type === 'keyword' && kwDisplay && ` · "${kwDisplay}"`}
+                        {rule.business_hours_only && ` · ${rule.hours_start}–${rule.hours_end}`}
+                        {rule.max_per_contact_day > 0 && ` · max ${rule.max_per_contact_day}/día`}
+                        {rule.match_count > 0 && ` · ${rule.match_count} activaciones`}
+                      </p>
                     </div>
-                    <p className="text-xs text-[#8b90a0] mt-0.5">
-                      {rule.trigger_type === 'keyword' ? `Keyword: "${rule.keyword}"` :
-                       rule.trigger_type === 'first_message' ? 'Primer mensaje' : 'Siempre'}
-                      {rule.match_count > 0 && ` · ${rule.match_count} activaciones`}
-                    </p>
+                    <div className="flex items-center gap-0.5 flex-shrink-0">
+                      <button onClick={() => toggleMutation.mutate({ id: rule.id, active: !rule.active })}
+                        className={clsx('p-1.5 rounded-lg transition-colors',
+                          rule.active ? 'text-[#4cd6ff] hover:bg-[#4cd6ff]/10' : 'text-white/20 hover:bg-white/5')}>
+                        {rule.active ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
+                      </button>
+                      <button onClick={() => openEdit(rule)} className="p-1.5 text-white/25 hover:text-[#aac7ff] rounded-lg transition-colors">
+                        <Edit2 size={13} />
+                      </button>
+                      <button onClick={() => deleteMutation.mutate(rule.id)} className="p-1.5 text-white/25 hover:text-[#ffb4ab] rounded-lg transition-colors">
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => toggleMutation.mutate({ id: rule.id, active: !rule.active })}
-                      className={clsx('p-1.5 rounded-lg transition-colors',
-                        rule.active ? 'text-[#4cd6ff] hover:bg-[#4cd6ff]/10' : 'text-[#8b90a0] hover:bg-white/5')}>
-                      {rule.active ? <ToggleRight size={16} /> : <ToggleLeft size={16} />}
-                    </button>
-                    <button onClick={() => openEdit(rule)} className="p-1.5 text-[#8b90a0] hover:text-[#aac7ff] rounded-lg transition-colors">
-                      <Edit2 size={13} />
-                    </button>
-                    <button onClick={() => deleteMutation.mutate(rule.id)} className="p-1.5 text-[#8b90a0] hover:text-[#ffb4ab] rounded-lg transition-colors">
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
-            <div className="p-4 border-t border-white/5">
+            <div className="p-4 border-t border-white/5 flex-shrink-0">
               <button onClick={openNew} className="btn-primary w-full py-2.5 text-sm flex items-center justify-center gap-2">
                 <Plus size={14} /> Nueva regla
               </button>
             </div>
           </>
         )}
+
+        {/* Scheduled messages tab */}
+        {!showForm && tab === 'scheduled' && (
+          <div className="flex-1 overflow-y-auto p-4 space-y-2">
+            {loadingScheduled && <div className="flex justify-center py-8"><div className="w-5 h-5 border-2 border-[#aac7ff] border-t-transparent rounded-full animate-spin" /></div>}
+            {!loadingScheduled && scheduled.length === 0 && (
+              <div className="text-center py-10">
+                <Calendar size={28} className="mx-auto mb-3 text-white/10" />
+                <p className="text-white/30 text-sm">Sin mensajes programados</p>
+              </div>
+            )}
+            {scheduled.map(msg => {
+              const isPending = msg.status === 'pending';
+              const jidList = (msg.jids || []).map(j => j.replace('@s.whatsapp.net', '')).slice(0, 2);
+              const extra = (msg.jids || []).length > 2 ? ` +${msg.jids.length - 2}` : '';
+              return (
+                <div key={msg.id} className="flex items-start gap-3 p-3.5 rounded-xl ghost-border bg-[#2a2a2a]/30">
+                  <div className={clsx('w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5',
+                    isPending ? 'bg-[#ffb77f]/10' : msg.status === 'sent' ? 'bg-[#4cd6ff]/10' : 'bg-[#ffb4ab]/10')}>
+                    <Clock size={14} className={isPending ? 'text-[#ffb77f]' : msg.status === 'sent' ? 'text-[#4cd6ff]' : 'text-[#ffb4ab]'} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-white/80 line-clamp-1">{msg.text}</p>
+                    <p className="text-xs text-white/30 mt-0.5">
+                      Para: {jidList.join(', ')}{extra} · {format(new Date(msg.scheduled_at), "dd/MM HH:mm")}
+                    </p>
+                    <span className={clsx('text-[10px] font-bold px-2 py-0.5 rounded-full mt-1 inline-block',
+                      isPending ? 'bg-[#ffb77f]/10 text-[#ffb77f]' :
+                      msg.status === 'sent' ? 'bg-[#4cd6ff]/10 text-[#4cd6ff]' :
+                      'bg-[#ffb4ab]/10 text-[#ffb4ab]')}>
+                      {isPending ? 'Pendiente' : msg.status === 'sent' ? 'Enviado' : msg.status === 'cancelled' ? 'Cancelado' : 'Falló'}
+                    </span>
+                  </div>
+                  {isPending && (
+                    <button onClick={() => cancelScheduledMutation.mutate(msg.id)}
+                      className="p-1.5 text-white/25 hover:text-[#ffb4ab] rounded-lg transition-colors flex-shrink-0"
+                      title="Cancelar">
+                      <X size={13} />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
       </div>
     </div>
   );

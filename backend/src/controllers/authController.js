@@ -24,12 +24,21 @@ exports.login = async (req, res) => {
 };
 
 exports.me = async (req, res) => {
-  res.json(req.user);
+  const u = req.user;
+  res.json({
+    id: u.id, name: u.name, email: u.email, role: u.role,
+    avatar: u.avatar, phone: u.phone, language: u.language,
+    timezone: u.timezone, notifications_email: u.notifications_email,
+    notifications_wa: u.notifications_wa, compact_mode: u.compact_mode
+  });
 };
 
 exports.updateProfile = async (req, res) => {
   try {
-    const { name, email } = req.body;
+    const {
+      name, email, phone, avatar, language, timezone,
+      notifications_email, notifications_wa, compact_mode
+    } = req.body;
     const user = await User.findByPk(req.user.id);
 
     if (email && email !== user.email) {
@@ -37,12 +46,30 @@ exports.updateProfile = async (req, res) => {
       if (exists) return res.status(400).json({ error: 'Email ya en uso' });
     }
 
-    await user.update({
-      ...(name ? { name } : {}),
-      ...(email ? { email } : {})
-    });
+    // Validate avatar size if provided (max ~1MB base64 ≈ 1.33MB string)
+    if (avatar && avatar.length > 1_400_000) {
+      return res.status(400).json({ error: 'La imagen es demasiado grande (máx 1MB)' });
+    }
 
-    res.json({ id: user.id, name: user.name, email: user.email, role: user.role, avatar: user.avatar });
+    const updates = {};
+    if (name  !== undefined) updates.name  = name;
+    if (email !== undefined) updates.email = email;
+    if (phone !== undefined) updates.phone = phone;
+    if (avatar !== undefined) updates.avatar = avatar;
+    if (language !== undefined) updates.language = language;
+    if (timezone !== undefined) updates.timezone = timezone;
+    if (notifications_email !== undefined) updates.notifications_email = notifications_email;
+    if (notifications_wa    !== undefined) updates.notifications_wa    = notifications_wa;
+    if (compact_mode        !== undefined) updates.compact_mode        = compact_mode;
+
+    await user.update(updates);
+
+    res.json({
+      id: user.id, name: user.name, email: user.email, role: user.role,
+      avatar: user.avatar, phone: user.phone, language: user.language,
+      timezone: user.timezone, notifications_email: user.notifications_email,
+      notifications_wa: user.notifications_wa, compact_mode: user.compact_mode
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

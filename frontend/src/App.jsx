@@ -16,6 +16,7 @@ import CalendarPage   from './pages/CalendarPage';
 import SettingsPage   from './pages/SettingsPage';
 import VideoCallPage  from './pages/VideoCallPage';
 import MarketingPage  from './pages/MarketingPage';
+import ProfilePage    from './pages/ProfilePage';
 
 const PrivateRoute = ({ children }) => {
   const { token } = useAuthStore();
@@ -54,6 +55,7 @@ export default function App() {
           <Route path="marketing" element={<MarketingPage />} />
           <Route path="reports"   element={<ReportsPage />} />
           <Route path="settings"  element={<SettingsPage />} />
+          <Route path="profile"   element={<ProfilePage />} />
           <Route path="users"     element={<AdminRoute><UsersPage /></AdminRoute>} />
         </Route>
       </Routes>

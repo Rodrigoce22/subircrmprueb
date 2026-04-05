@@ -27,8 +27,32 @@ const User = sequelize.define('User', {
     defaultValue: 'user'
   },
   avatar: {
-    type: DataTypes.STRING,
+    type: DataTypes.TEXT,
     allowNull: true
+  },
+  phone: {
+    type: DataTypes.STRING(30),
+    allowNull: true
+  },
+  language: {
+    type: DataTypes.STRING(5),
+    defaultValue: 'es'
+  },
+  timezone: {
+    type: DataTypes.STRING(60),
+    defaultValue: 'America/Buenos_Aires'
+  },
+  notifications_email: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: true
+  },
+  notifications_wa: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: true
+  },
+  compact_mode: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false
   },
   active: {
     type: DataTypes.BOOLEAN,
