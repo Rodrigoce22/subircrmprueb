@@ -1,9 +1,6 @@
-version: '3.9'
-
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: influence_db
     restart: unless-stopped
     environment:
       POSTGRES_DB: influence_crm
@@ -23,7 +20,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: influence_backend
     restart: unless-stopped
     depends_on:
       postgres:
@@ -52,7 +48,6 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: influence_frontend
     restart: unless-stopped
     depends_on:
       - backend
