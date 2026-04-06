@@ -23,3 +23,6 @@ Thumbs.db
 # Editor folders
 .vscode/
 .idea/
+
+# Exclude nested local repo
+influence-crm-fix/
