@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: influence-crm-backend
+    runtime: docker
+    repo: https://github.com/Rodrigoce22/subircrmprueb
+    dockerfilePath: influence-crm/backend/Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 3001
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        fromGroup: influence-crm-backend
+      - key: ADMIN_EMAIL
+        fromGroup: influence-crm-backend
+      - key: ADMIN_PASS
+        fromGroup: influence-crm-backend
+      - key: DATABASE_URL
+        fromService:
+          type: pgsql
+          name: influence-crm-db
+          envVarKey: DATABASE_URL
+      - key: FRONTEND_URL
+        value: https://rodrigoce22.github.io/subircrmprueb/
+
+  - type: pgsql
+    name: influence-crm-db
+    plan: free
+    ipAllowList: []
