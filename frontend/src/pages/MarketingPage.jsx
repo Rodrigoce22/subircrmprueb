@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Megaphone, Plus, Instagram, Globe, Mail, FileText,
   Pencil, Trash2, Calendar, Tag, CheckCircle2, Clock,
   Zap, TrendingUp, Eye, BarChart3, ChevronRight,
-  Video, Image, AlignLeft, Hash, X, Sparkles
+  Video, Image, AlignLeft, Hash, X, Sparkles, Upload, Loader2
 } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import api from '../services/api';
 import { useAuthStore } from '../store/authStore';
 import { toast } from 'sonner';
@@ -379,6 +380,24 @@ function MarketingStats({ tasks }) {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
+// ── Excel serial date → YYYY-MM-DD ────────────────────────────────────────────
+function excelDateToISO(serial) {
+  if (!serial || typeof serial !== 'number') return null;
+  const d = new Date(Math.round((serial - 25569) * 86400 * 1000));
+  return d.toISOString().split('T')[0];
+}
+
+// ── Detect content type from visual/copy text ──────────────────────────────────
+function detectType(visual = '', copy = '') {
+  const t = (visual + ' ' + copy).toLowerCase();
+  if (t.includes('reel') || t.includes('video')) return 'reel';
+  if (t.includes('storie') || t.includes('story')) return 'story';
+  if (t.includes('campaña') || t.includes('anuncio') || t.includes('pauta')) return 'campaign';
+  if (t.includes('blog') || t.includes('artículo')) return 'blog';
+  if (t.includes('email')) return 'email';
+  return 'post';
+}
+
 export default function MarketingPage() {
   const qc = useQueryClient();
   const { user } = useAuthStore();
@@ -387,6 +406,8 @@ export default function MarketingPage() {
   const [filterType, setFilterType] = useState('all');
   const [modal, setModal] = useState(null); // null | 'create' | task
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const xlsxRef = useRef();
 
   // Find or track the marketing project ID
   const [marketingProjectId, setMarketingProjectId] = useState(null);
@@ -438,6 +459,77 @@ export default function MarketingPage() {
     onError: () => toast.error('Error al eliminar'),
   });
 
+  // ── Excel import ─────────────────────────────────────────────────────────────
+  const handleExcelImport = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !marketingProjectId) return;
+    setImporting(true);
+    try {
+      const buf  = await file.arrayBuffer();
+      const wb   = XLSX.read(buf, { type: 'array' });
+      const rows = [];
+
+      wb.SheetNames.forEach(sheetName => {
+        const platform = sheetName.toLowerCase().includes('facebook') ? 'facebook'
+          : sheetName.toLowerCase().includes('instagram') ? 'instagram'
+          : sheetName.toLowerCase().includes('pauta') ? 'campaign'
+          : 'instagram';
+
+        const ws   = wb.Sheets[sheetName];
+        const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+        data.slice(4).forEach(row => {
+          const fecha  = excelDateToISO(row[0]);
+          const visual = [row[7], row[8], row[9], row[10]].filter(v => v && v !== '').join(' / ');
+          const copy   = (row[12] || '').toString().trim();
+          const cta    = (row[13] || '').toString().trim();
+          if (!fecha || (!visual && !copy)) return;
+
+          const title = visual
+            ? visual.substring(0, 80)
+            : copy.split('\n')[0].substring(0, 80);
+          const desc  = [copy, cta ? `CTA: ${cta}` : ''].filter(Boolean).join('\n\n').substring(0, 500);
+          const type  = detectType(visual, copy);
+
+          rows.push({ fecha, title, desc, type, platform });
+        });
+      });
+
+      // Dedupe by fecha+title
+      const seen = new Set();
+      const unique = rows.filter(r => {
+        const k = `${r.fecha}-${r.title}`;
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+
+      let created = 0;
+      for (const r of unique) {
+        try {
+          await api.post('/tasks', {
+            title:       r.title,
+            description: r.desc,
+            status:      'pending',
+            priority:    'medium',
+            due_date:    r.fecha,
+            tags:        [r.type, r.platform],
+            project_id:  marketingProjectId,
+          });
+          created++;
+        } catch { /* skip duplicates or errors */ }
+      }
+
+      await qc.invalidateQueries({ queryKey: ['marketing-tasks'] });
+      toast.success(`${created} publicaciones importadas desde Excel`);
+    } catch (err) {
+      toast.error('Error al leer el Excel: ' + err.message);
+    } finally {
+      setImporting(false);
+      e.target.value = '';
+    }
+  };
+
   const filteredTasks = tasks.filter(t => {
     if (filterStatus !== 'all' && t.status !== filterStatus) return false;
     if (filterType !== 'all' && !((t.tags || []).includes(filterType))) return false;
@@ -469,11 +561,23 @@ export default function MarketingPage() {
               Gestión de contenido creativo, campañas y calendario editorial
             </p>
           </div>
-          <button
-            onClick={() => setModal('create')}
-            className="btn-primary flex items-center gap-2 px-5 py-2.5 text-sm flex-shrink-0">
-            <Plus size={15} /> Nuevo contenido
-          </button>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <input ref={xlsxRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={handleExcelImport} />
+            <button
+              onClick={() => xlsxRef.current?.click()}
+              disabled={importing || !marketingProjectId}
+              className="flex items-center gap-2 px-4 py-2.5 text-sm font-semibold rounded-xl ghost-border text-white/60 hover:text-white hover:bg-white/5 transition-all disabled:opacity-40"
+              title="Importar calendario desde Excel"
+            >
+              {importing ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+              {importing ? 'Importando...' : 'Importar Excel'}
+            </button>
+            <button
+              onClick={() => setModal('create')}
+              className="btn-primary flex items-center gap-2 px-5 py-2.5 text-sm">
+              <Plus size={15} /> Nuevo contenido
+            </button>
+          </div>
         </div>
       </motion.div>
 

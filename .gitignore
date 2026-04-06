@@ -67,3 +67,4 @@ coverage/
 *.local
 .cache/
 .parcel-cache/
+reports/*.pdf
