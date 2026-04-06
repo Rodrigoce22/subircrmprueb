@@ -2,14 +2,13 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
 import {
-  Zap, Users, CheckSquare, Download, TrendingUp,
+  Zap, Users, Download, TrendingUp,
   TrendingDown, Minus, ExternalLink, Brain, Shield,
-  FileText, Loader, BarChart3, Activity,
+  Loader, Activity,
 } from 'lucide-react';
 import api from '../services/api';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
-import { es } from 'date-fns/locale';
 import clsx from 'clsx';
 
 // ── PDF Reports ────────────────────────────────────────────────────────────────
@@ -69,13 +68,19 @@ export default function ReportsPage() {
 
   const { data: tasks = [] } = useQuery({
     queryKey: ['tasks'],
-    queryFn: () => api.get('/tasks').then(r => r.data),
+    queryFn: () => api.get('/tasks').then(r => {
+      const d = r.data;
+      return Array.isArray(d) ? d : (d.tasks || []);
+    }),
     staleTime: 60_000,
   });
 
   const { data: contacts = [] } = useQuery({
     queryKey: ['contacts-all'],
-    queryFn: () => api.get('/contacts').then(r => r.data),
+    queryFn: () => api.get('/contacts').then(r => {
+      const d = r.data;
+      return Array.isArray(d) ? d : (d.contacts || []);
+    }),
     staleTime: 60_000,
   });
 
@@ -96,9 +101,10 @@ export default function ReportsPage() {
     event:    t.title,
     entity:   t.assignee?.name || 'Sin asignar',
     accuracy: t.status === 'completed' ? '100%' : t.status === 'in_progress' ? '65%' : '—',
-    ts:       t.updatedAt
-      ? format(new Date(t.updatedAt), 'HH:mm:ss')
-      : '—',
+    ts: (() => {
+      try { return t.updatedAt ? format(new Date(t.updatedAt), 'HH:mm:ss') : '—'; }
+      catch { return '—'; }
+    })(),
     status:   t.status,
   }));
 
