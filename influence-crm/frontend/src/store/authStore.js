@@ -18,11 +18,22 @@ const demoUser = {
   compact_mode: false
 };
 
-const generateDemoToken = () => 'demo-token-' + Date.now();
+const generateDemoToken = () => 'demo-token-' + Date.now() + '-demo';
+
+// Inicializar token desde localStorage o crear uno demo
+const initToken = () => {
+  const stored = localStorage.getItem('influence_token');
+  if (stored) return stored;
+  
+  // Crear token demo automáticamente
+  const token = generateDemoToken();
+  localStorage.setItem('influence_token', token);
+  return token;
+};
 
 export const useAuthStore = create((set) => ({
-  user: null,
-  token: localStorage.getItem('influence_token'),
+  user: demoUser,
+  token: initToken(),
   isLoading: false,
 
   login: async (email, password) => {
@@ -86,12 +97,5 @@ export const useAuthStore = create((set) => ({
     }
   },
 
-  setUser: (user) => set({ user }),
-
-  initializeDemoMode: () => {
-    const token = generateDemoToken();
-    const user = demoUser;
-    localStorage.setItem('influence_token', token);
-    set({ user, token });
-  }
+  setUser: (user) => set({ user })
 }));
