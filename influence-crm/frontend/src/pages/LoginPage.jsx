@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 
 export default function LoginPage() {
   const { login, token, isLoading } = useAuthStore();
-  const [form, setForm] = useState({ email: '', password: '' });
+  const [form, setForm] = useState({ email: 'admin@influence.crm', password: 'demo' });
 
   if (token) return <Navigate to="/dashboard" replace />;
 
@@ -38,36 +38,13 @@ export default function LoginPage() {
 
         {/* Card */}
         <div className="glass-panel rounded-2xl p-8 shadow-ambient">
-          <h2 className="text-lg font-bold text-white mb-2 tracking-tight">Iniciar Sesión</h2>
-          <p className="text-xs text-white/40 mb-4">💡 Usa cualquier email y contraseña "demo"</p>
+          <h2 className="text-lg font-bold text-white mb-6 tracking-tight">Iniciar Sesión</h2>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="block text-xs font-medium text-white/40 mb-1.5 uppercase tracking-wider">Email</label>
-              <input
-                type="email"
-                required
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-                placeholder="admin@influence.crm"
-                className="input-obs w-full px-4 py-3 text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-white/40 mb-1.5 uppercase tracking-wider">Contraseña</label>
-              <input
-                type="password"
-                required
-                value={form.password}
-                onChange={(e) => setForm({ ...form, password: e.target.value })}
-                placeholder="demo"
-                className="input-obs w-full px-4 py-3 text-sm"
-              />
-            </div>
             <button
               type="submit"
               disabled={isLoading}
-              className="btn-primary w-full py-3.5 text-sm mt-2 rounded-xl">
-              {isLoading ? 'Entrando...' : 'Entrar'}
+              className="btn-primary w-full py-4 text-base font-semibold mt-2 rounded-xl">
+              {isLoading ? 'Entrando...' : '🚀 ENTRAR'}
             </button>
           </form>
         </div>
