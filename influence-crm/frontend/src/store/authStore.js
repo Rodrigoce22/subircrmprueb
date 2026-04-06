@@ -86,5 +86,12 @@ export const useAuthStore = create((set) => ({
     }
   },
 
-  setUser: (user) => set({ user })
+  setUser: (user) => set({ user }),
+
+  initializeDemoMode: () => {
+    const token = generateDemoToken();
+    const user = demoUser;
+    localStorage.setItem('influence_token', token);
+    set({ user, token });
+  }
 }));

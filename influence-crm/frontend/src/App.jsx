@@ -18,6 +18,8 @@ import VideoCallPage  from './pages/VideoCallPage';
 import MarketingPage  from './pages/MarketingPage';
 import ProfilePage    from './pages/ProfilePage';
 
+const DEMO_MODE = true;
+
 const PrivateRoute = ({ children }) => {
   const { token } = useAuthStore();
   if (!token) return <Navigate to="/login" replace />;
@@ -31,8 +33,15 @@ const AdminRoute = ({ children }) => {
 };
 
 export default function App() {
-  const { token, fetchMe }  = useAuthStore();
+  const { token, fetchMe, initializeDemoMode }  = useAuthStore();
   const { connect, disconnect } = useSocketStore();
+
+  useEffect(() => {
+    // En demo mode, inicializar automáticamente
+    if (DEMO_MODE && !token) {
+      initializeDemoMode();
+    }
+  }, []);
 
   useEffect(() => {
     if (token) { fetchMe(); connect(); }
