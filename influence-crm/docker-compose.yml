@@ -1,0 +1,64 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: influence_crm
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASS:-influence_secure_pass}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - influence_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: 3001
+      NODE_ENV: production
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: influence_crm
+      DB_USER: postgres
+      DB_PASS: ${DB_PASS:-influence_secure_pass}
+      JWT_SECRET: ${JWT_SECRET:-change_this_jwt_secret_in_production}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@influence.com}
+      ADMIN_PASS: ${ADMIN_PASS:-influence2024}
+      FRONTEND_URL: ${FRONTEND_URL:-*}
+    volumes:
+      - wa_sessions:/app/.wa_sessions
+      - reports:/app/reports
+    networks:
+      - influence_net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    networks:
+      - influence_net
+
+volumes:
+  postgres_data:
+  wa_sessions:
+  reports:
+
+networks:
+  influence_net:
+    driver: bridge
