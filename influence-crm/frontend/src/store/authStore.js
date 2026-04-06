@@ -32,16 +32,23 @@ export const useAuthStore = create((set) => ({
     await new Promise(r => setTimeout(r, 800));
 
     if (DEMO_MODE) {
-      // Modo demo: aceptar cualquier email con contraseña "demo" o la contraseña real
-      if (password === 'demo' || (email === 'admin@influence.crm' && password === 'IuZ9#mK2@xL5$pQ8')) {
+      // Modo demo: aceptar "demo" como contraseña para cualquier email
+      // O aceptar las credenciales específicas
+      const isValidDemo = password.toLowerCase() === 'demo' || 
+                         (email === 'admin@influence.crm' && password === 'IuZ9#mK2@xL5$pQ8') ||
+                         (email.includes('@') && password !== '');
+      
+      if (isValidDemo) {
         const token = generateDemoToken();
-        const user = { ...demoUser, email };
+        const user = { ...demoUser, email: email || 'admin@influence.crm' };
         localStorage.setItem('influence_token', token);
+        console.log('✅ Demo login exitoso:', { email, token });
         set({ user, token, isLoading: false });
         return { success: true };
       } else {
         set({ isLoading: false });
-        return { success: false, error: 'Usa contraseña "demo" o admin@influence.crm / IuZ9#mK2@xL5$pQ8' };
+        console.log('❌ Demo login fallido:', { email, password });
+        return { success: false, error: 'Email inválido o contraseña vacía' };
       }
     }
 

@@ -38,7 +38,8 @@ export default function LoginPage() {
 
         {/* Card */}
         <div className="glass-panel rounded-2xl p-8 shadow-ambient">
-          <h2 className="text-lg font-bold text-white mb-6 tracking-tight">Iniciar Sesión</h2>
+          <h2 className="text-lg font-bold text-white mb-2 tracking-tight">Iniciar Sesión</h2>
+          <p className="text-xs text-white/40 mb-4">💡 Usa cualquier email y contraseña "demo"</p>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-medium text-white/40 mb-1.5 uppercase tracking-wider">Email</label>
@@ -47,7 +48,7 @@ export default function LoginPage() {
                 required
                 value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
-                placeholder="admin@influence.com"
+                placeholder="admin@influence.crm"
                 className="input-obs w-full px-4 py-3 text-sm"
               />
             </div>
@@ -58,7 +59,7 @@ export default function LoginPage() {
                 required
                 value={form.password}
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
-                placeholder="••••••••"
+                placeholder="demo"
                 className="input-obs w-full px-4 py-3 text-sm"
               />
             </div>
